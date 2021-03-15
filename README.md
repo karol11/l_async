@@ -25,13 +25,13 @@ struct async_dir {
 };
 ```
 
-With this API traversing the lists of files and directories as well as taking the size of files are performed in asynchronous manner with callbacks.
+Let's write a function that traverses the lists of files and directories, acquires file sizes and calculates the total size of the subtree:
 
 ```C++
 void calc_tree_size_async(const async_dir& root, function<void(int)> callback);
 ```
 
-On the other hand async API allows us to speed-up our tasks because our thread doesn't have to wait on `next`/`get size` blocking calls, and even more, it allows us to traverse many subdirectories in parallel, but on the other hand this async code will be very tricky and cumbersome.
+This async API allows us to speed-up our tasks because our thread doesn't have to wait on `next`/`get size` blocking calls, and even more, it allows us to traverse many subdirectories in parallel, but on the other hand this async code will be very tricky and cumbersome.
 - Our data structures have to preserve `async_stream` instances across asynchronous iterations on `next` calls.
 - We have to support nested recursive or parallel co-existing iteration contexts with data and results.
 - We need to organize some reactive result delivery and accounting when to notificate callbacks.
