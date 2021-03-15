@@ -4,7 +4,7 @@ A Lightweight C++11 library for asynchronous programming
 
 ## Example
 
-Suppose need to scan subderictory and calc file sizes using this file system API:
+Suppose need to calc the total size of all files in the given subdirectories using the provided file system API:
 
 ```C++
 template <typename T>
@@ -25,19 +25,20 @@ struct async_dir {
 };
 ```
 
-Let's write a function that traverses the lists of files and directories, acquires file sizes and calculates the total size of the subtree:
+All we need to do is traverse the lists of files and directories, acquires file sizes and calculate the total size:
 
 ```C++
 void calc_tree_size_async(const async_dir& root, function<void(int)> callback);
 ```
 
-This async API allows us to speed-up our tasks because our thread doesn't have to wait on `next`/`get size` blocking calls, and even more, it allows us to traverse many subdirectories in parallel, but on the other hand this async code will be very tricky and cumbersome.
+This API is async, that allows us to speed-up our tasks because our thread doesn't have to wait on `next`/`get size` blocking calls, and even more, it allows us to traverse many subdirectories in parallel, but on the other hand our async code will be very tricky and cumbersome.
 - Our data structures have to preserve `async_stream` instances across asynchronous iterations on `next` calls.
 - We have to support nested recursive or parallel co-existing iteration contexts with data and results.
 - We need to organize some reactive result delivery and accounting when to notificate callbacks.
-- Unique_ptrs are not copy-constructible, thus std::functions should we elect to use them can't store these pointers in their capture blocks.
+- Unique_ptrs are not copy-constructible, thus std::functions, should we elect to use them, can't store these pointers in their capture blocks.
 
-Overall, is it hard to write such code? You can stop reading here and try to make your own solution first.
+Overall, is it hard to write such code?
+You can stop reading here and try to make your own solution first.
 
 This is my solution using `l_async`:
 
@@ -71,7 +72,7 @@ void calc_tree_size_async(const async_dir& root, function<void(int)> callback) {
 }
 ```
 
-It:
+This solution:
 - has about the same size as in synchronous case,
 - has same structure and same complexity,
 - and even more, it performs scan in parallel,
@@ -81,22 +82,22 @@ Detailed comparison of sync and async code can be found [here](https://github.co
 
 ## How it works
 
-All library consists of three primitives:
-- `l_async::unique`
+The entire library consists of just three primitives:
+- `l_async::unique<T>`
 - `l_async::result<T>`
 - `l_async::loop`
 
 ### `l_async::unique`
 
-A transparent wrapper for any type. It supports move semantics, disallows assignments and terminates programs in an attempt to copy data. It's useful when we need to capture `std::unique_ptr` in lambdas.
+C++ language designers should have supported move-only lambdas capturing move-only data types. But they didn't. That's what `unique` is for: it wraps data type and tells the compiler that this type is now copy-constructible, but it fails on assert on attempt to copy data. Of course, this wrapper should be used only in lsmbdas that are move-only by design. Luckily `l_async::loop` and `l_async::result`  guarantee that their lambdas will never be copied.
 
-C++ language designers should have supported move-only lambdas capturing move-only data types. But they didn't. That's what `unique` is for: it wraps data type and tells the compiler that this type is now copy-constructible. Of course, this makes your lambda a move-only entity. It's intended to be used in cases like `las::loop` where it is guaranteed to never be copied.
+So it is a transparent wrapper for any type. It supports move semantics, disallows assignments and terminates programs on attempts to copy data. It's useful when we need to capture `std::unique_ptr` in lambdas.
 
 In the above example it is used to store file and dir streams between get_next iterations.
 
 ### `l_async::result<T>`
 
-It's a shared_ptr to memory, that holds data of a given type along with a callback, that accepts this type as parameter.
+It's a shared_ptr to a memory block, that holds data of a given type along with a callback that accepts this type as parameter.
 * You can freely pass this object by value and store it in any levels of your processing lambdas.
 * You can access and modify this data.
 * At the moment it is no longer referenced, it calls its callback with its data.
@@ -104,11 +105,11 @@ It's a shared_ptr to memory, that holds data of a given type along with a callba
 You can think of it as the less limiting generalization of `promise_all` pattern in other languages.
 
 It can be used to combine data from different branches of asynchronous processes.
-Tree of `las::result`-s provides reactive data and control transfers for processes having subprocesses.
+Tree of `l_async::result`-s provides reactive data and control transfers for processes having subprocesses.
 
 ### `l_async::loop`
 
-It's a workhorse of the library. It organizes asybchronous iterative processes.
+It's a workhorse of this library. It organizes the asybchronous iterative processes.
 It accepts lambda which capture block represents context data, that should be preserved across iterations and code is a loop body.
 - Initially `l_async::loop` moves its lambda to the heap-allocated shared block. This guarantees that captured objects will never be copied.
 - Then it calls this lambda passing to it l_async::loop instance (itself) as parameter (who said Y-combinator?).
