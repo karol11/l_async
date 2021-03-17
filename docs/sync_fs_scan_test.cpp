@@ -55,7 +55,7 @@ namespace
 		}
 	};
 
-	TEST(LAsync, FileSystemAsyncTest)
+	TEST(LAsync, FileSystemSyncTest)
 	{
 		ASSERT_EQ(
 			calc_tree_size_sync(fake_sync_dir{ 0 }),

@@ -60,7 +60,7 @@ void calc_tree_size_async(const async_dir& root, result<int> result) {
 		stream->next([&, next](auto file) {
 			if (!file) return;
 			file->get_size([=](int size) mutable {
-				result.data() += size;
+				*result += size;
 			});
 			next();
 		});
@@ -82,10 +82,11 @@ Detailed comparison of sync and async code can be found [here](https://github.co
 
 ## How it works
 
-The entire library consists of just three primitives:
+The entire library consists of just four primitives:
 - `l_async::unique<T>`
 - `l_async::result<T>`
 - `l_async::loop`
+- `l_async::slot`
 
 ### `l_async::unique`
 
@@ -123,6 +124,11 @@ Our loop body lambda can use its `next` parameter in four ways:
 - Or pass it to some function, that expects `std::function<void()>` to be called later; this prolongs lifetime of the context data and allows asynchronous iterations.
 - Or capture it in some callback, that expects data and call later from that callback as shown in above example, this is also produces asynchronous iterations.
 - Or call it synchronously or pass to a function that will call it synchronously; this sets a flag, that will restart the lambda immediately after it returned, performing iteration without stack overflow. BTW, it might be this case in the above example, if `stream->next` will call its callback synchrously.
+
+### `l_async::slot`
+
+Inverses control flow, allows to build combinable data providers.
+Details: (TBD)
 
 ## Structure
 - `include/l_async.h` - single header library itself,

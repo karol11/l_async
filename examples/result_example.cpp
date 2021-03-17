@@ -50,7 +50,7 @@ namespace
 		](auto next) mutable {
 			stream.get_data([&, next](auto data) {
 				if (!data) return;                  // [2]
-				result.data().push_back(*data);
+				result->push_back(*data);
 				next();
 			});
 		});

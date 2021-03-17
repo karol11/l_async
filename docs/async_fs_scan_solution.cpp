@@ -17,7 +17,7 @@ void calc_tree_size_async(const async_dir& root, result<int> result)
 		stream->next([&, next](auto file) {
 			if (!file) return;
 			file->get_size([=](int size) mutable {
-				result.data() += size;
+				*result += size;
 			});
 			next();
 		});

@@ -11,8 +11,8 @@ namespace l_async
 	{
 		std::shared_ptr<
 			std::pair<
-			std::function<void(const loop&)>,
-			bool>> body;
+				std::function<void(const loop&)>,
+				bool>> body;
 
 	public:
 		loop(std::function<void(std::function<void()>)> body)
@@ -61,9 +61,20 @@ namespace l_async
 				std::move(callback)))
 		{}
 
-		T& data()
+		T& operator* ()
 		{
 			return ptr->data;
+		}
+
+		T* operator-> ()
+		{
+			return &ptr->data;
+		}
+
+		template<typename X>
+		function<void(X)> setter(X& dst)
+		{
+			return [dst = &dst, holder = ptr](X value) { *dst = move(value); };
 		}
 	};
 
@@ -102,6 +113,80 @@ namespace l_async
 		}
 
 		void operator= (const unique<T>&) = delete;
+	};
+
+	template <typename T>
+	class slot
+	{
+		struct data
+		{
+			std::function<void(bool)> who_awaits_request;
+			std::function<void(T)> who_awaits_data;
+
+		public:
+			~data()
+			{
+				if (who_awaits_request) {
+					who_awaits_request(/*terminate=*/true);
+				}
+			}
+		};
+		std::shared_ptr<data> ptr;
+
+	public:
+		class provider
+		{
+			std::weak_ptr<data> ptr;
+
+		public:
+			provider(std::weak_ptr<data> ptr)
+				: ptr(std::move(ptr))
+			{}
+
+			void await(std::function<void(bool)> request_listener)
+			{
+				if (auto p = ptr.lock()) {
+					assert(!p->who_awaits_request);
+					if (p->who_awaits_data) {
+						request_listener(/*terminate=*/false);
+					} else {
+						p->who_awaits_request = move(request_listener);
+					}
+				} else {
+					request_listener(/*terminate=*/true);
+				}
+			}
+
+			void operator() (T value)
+			{
+				if (auto p = ptr.lock()) {
+					assert(p->who_awaits_data);
+					std::function<void(T)> temp;
+					std::swap(temp, p->who_awaits_data);
+					temp(std::move(value));
+				}
+			}
+		};
+
+		slot()
+			: ptr(std::make_shared<data>())
+		{}
+
+		void operator() (std::function<void(T)> data_listener)
+		{
+			assert(!ptr->who_awaits_data);
+			ptr->who_awaits_data = std::move(data_listener);
+			if (ptr->who_awaits_request) {
+				std::function<void(bool)> temp;
+				std::swap(temp, ptr->who_awaits_request);
+				temp(/*terminate=*/false);
+			}
+		}
+
+		provider get_provider()
+		{
+			return provider{ std::weak_ptr<data>(ptr) };
+		}
 	};
 }
 
