@@ -139,7 +139,8 @@ The providers are a little bit more trickiy.
 - Generalized provider accepts a request for data with callback: `function<void(function<void(T)> callback)> provider`.
 - It never provides data until requested.
 - Each data request can have different callback.
-- In the basic case one request assumes one responce.
+- In the basic case one request assumes one respons
+- e.
 - The `async_stream::next` and `async_file::get_size` are the two examples of data providers.
 
 Async slot allows to make data providers:
