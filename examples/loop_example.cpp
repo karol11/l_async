@@ -17,19 +17,19 @@ using std::nullopt;
 
 struct async_data_stream
 {
-	int i = 0;
-	executor& ex;
-	async_data_stream(executor& ex)
-		: ex(ex)
-	{}
+    int i = 0;
+    executor& ex;
+    async_data_stream(executor& ex)
+        : ex(ex)
+    {}
 
-	// Our testing data stream returns three numbers and end-of-stream.
-	void get_data(function<void(optional<int>)> callback)
-	{
-		ex.schedule([callback = move(callback), v = i++] {
-			callback(v < 3 ? optional<int>(v) : nullopt);
-		});
-	}
+    // Our testing data stream returns three numbers and end-of-stream.
+    void get_data(function<void(optional<int>)> callback)
+    {
+        ex.schedule([callback = move(callback), v = i++] {
+            callback(v < 3 ? optional<int>(v) : nullopt);
+        });
+    }
 };
 
 // Our goal is to accumulate this stream in the std::vector<int>
@@ -77,23 +77,23 @@ void accumulate(async_data_stream stream, function<void(vector<int>)> callback);
 #include "l_async.h"
 
 void accumulate(
-	async_data_stream stream,
-	function<void(vector<int>)> callback)
+    async_data_stream stream,
+    function<void(vector<int>)> callback)
 {
-	l_async::loop for_stream([                  // [1]
-		stream = move(stream),                  // [2]
-		callback = move(callback),
-		result = vector<int>()                  // [3]
-	](auto next) mutable {                      // [4]
-		stream.get_data([&, next](auto data) {  // [5]
-			if (data) {
-				result.push_back(*data);
-				next();                         // [6]
-			} else {
-				callback(move(result));         // [7]
-			}
-		});
-	});
+    l_async::loop for_stream([                  // [1]
+        stream = move(stream),                  // [2]
+        callback = move(callback),
+        result = vector<int>()                  // [3]
+    ](auto next) mutable {                      // [4]
+        stream.get_data([&, next](auto data) {  // [5]
+            if (data) {
+                result.push_back(*data);
+                next();                         // [6]
+            } else {
+                callback(move(result));         // [7]
+            }
+        });
+    });
 }
 
 // -- Explanation ---------------
@@ -171,12 +171,12 @@ void accumulate(
 
 TEST(LAsync, LoopExample)
 {
-	executor ex;
-	accumulate(async_data_stream(ex), [](std::vector<int> data) {
-		ASSERT_EQ(data.size(), size_t(3));
-		for (int i = 0; i < data.size(); ++i)
-		{
-			ASSERT_EQ(data[i], i);
-		}
-	});
+    executor ex;
+    accumulate(async_data_stream(ex), [](std::vector<int> data) {
+        ASSERT_EQ(data.size(), size_t(3));
+        for (int i = 0; i < data.size(); ++i)
+        {
+            ASSERT_EQ(data[i], i);
+        }
+    });
 }
