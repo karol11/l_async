@@ -149,14 +149,14 @@ The `l_async::slot` allows to make data providers:
   - `term=true` - if it is destroyed. In this case you need to destroy your `prov` object and return,
   - `term=false` - if data is requested. In this case you need to prepare data sync or async, doesn't matter, and call you'r `prov()` with your data. Yes it is also a `function(T)`
 
-Example
+#### Example:
 
-Async data provider that takes two async data providers that provide streams of `optional<T>` and `optional<Y>` (where `nullopt` signals the end of stream), and returns their inner join in the form of the stream of `optional<pair<T, Y>>`
+Async data provider that takes two other async data providers that provide streams of `optional<T>` and `optional<Y>` (where `nullopt` signals the end of stream), and returns their inner-join in the form of the stream of `optional<pair<T, Y>>`
 ```C++
 template<typename T, typename Y>
 function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
     function<void(function<void(optional<T>)>)> seq_a,
-    function<void(function<void(optional<T>)>)> seq_b)
+    function<void(function<void(optional<Y>)>)> seq_b)
 {
     slot<optional<pair<T, Y>>> result;  // [1]
     loop zipping([
@@ -166,14 +166,14 @@ function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
     ](auto next) mutable {
         sink.await([&, next](bool term) {  // [3]
             if (term) return;  // [4]
-            l_async::result<pair<optional<int>, optional<int>>> combined([&, next](auto combined) mutable {  // [5]
+            l_async::result<pair<optional<T>, optional<Y>>> combined([&, next](auto combined) mutable {  // [5]
                 sink(combined.first && combined.second  // [6]
                     ? optional(pair{move(*combined.first), move(*combined.second)})
                     : nullopt);
                 next();  // [7]
             });
-            seq_a(combined.setter(combined->first));  // [8]
-            seq_b([combined](auto value) mutable { combined->second = move(value); }); // [9] (the same as [8], but less clear)
+            seq_b([combined](auto value) mutable { combined->second = move(value); }); // [8] (the same as [9], but less clear)
+            seq_a(combined.setter(combined->first));  // [9]
         });
     });
     return result;  // [9]
@@ -185,7 +185,7 @@ Where
 - We register that we are ready to serve the next request \[3]
 - When the consumer deletes our slot object, we detect it in \[4] and delete our context data by not calling and just releasing the `next`. This also deletes `seq_a` and `seq_b`. 
 - On the incoming data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously.
-- Then we perform two parallel requests on `seq_a` \[8] and `seq_b` \[9]. Please note, that these two line do exactly the same job. Line \[9] is just an illustration of what `result::setter` does.
+- Then we perform two parallel requests on `seq_a` \[9] and `seq_b` \[8]. Please note, that these two line do exactly the same job. Line \[8] is just an illustration of what `result::setter` does internally.
 - After two results are done fetching, we notify our consumer by calling `sink` at \[6]
 - And by calling `next` \[7] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive another request.
 - Our `loop` will continue working until our consumer deletes our `slot` object and we stop at \[4].
