@@ -139,20 +139,19 @@ The providers are a little bit more trickiy.
 - Generalized provider accepts a request for data with callback: `function<void(function<void(T)> callback)> provider`.
 - It never provides data until requested.
 - Each data request can have different callback.
-- In the basic case one request assumes one respons
-- e.
+- In the basic case one request assumes one response.
 - The `async_stream::next` and `async_file::get_size` are the two examples of data providers.
 
-Async slot allows to make data providers:
-- Create instance of `l_async::slot<T>` and give it to consumers. It is a shared_ptr to the real object. It's also a `function<void(function<void(T)> callback)> provider`. It can be called by any consumer.
-- Before the instance of `l_async::slot<T>` is given to consumers, you should take and store your own "provider" part of this slot with `auto prov = get_provider()`. It is also a `shared_ptr`.
-- When you finished your provider initialization and are ready to serve the requests, call `prov.await([](bool term) {...});`, this call will store its lambda till the moment, the consumer will either call the slot for data or destroy it. If either of this event happen, its lambda will be awoken with bool parameter:
-  - `term=true` - if it is destroyed. In this case you need to destroy your `prov` object and quit,
-  - `term=false` - if data requested. In this case you need to prepare data sync or async, doesn't matter, and call you'r `prov()` with your data. Yes it is also a `function(T)`
+The `l_async::slot` allows to make data providers:
+1. Create instance of `l_async::slot<T>` and give it to consumers. It is a shared_ptr to the real object. It's also a `function<void(function<void(T)> callback)> provider`. It can be called by any consumer.
+2. Before the instance of `l_async::slot<T>` is given to consumers, you should take and store your own "provider" part of this slot with `auto prov = get_provider()`. It is also a `shared_ptr`.
+3. When you finished your provider initialization and are ready to serve the requests, call `prov.await([](bool term) {...});`, this call will store its lambda till the moment, the consumer will either call the slot for data or destroy it. If either of this event happened, this lambda will be awoken with a bool parameter:
+  - `term=true` - if it is destroyed. In this case you need to destroy your `prov` object and return,
+  - `term=false` - if data is requested. In this case you need to prepare data sync or async, doesn't matter, and call you'r `prov()` with your data. Yes it is also a `function(T)`
 
 Example
 
-Async data provider that takes two async data providers of streams of `optional<T>` and `optional<Y>` (where `nullopt` signals the end of stream, and returns their inner join in the form of the stream of `optional<pair<T, Y>>`
+Async data provider that takes two async data providers that provide streams of `optional<T>` and `optional<Y>` (where `nullopt` signals the end of stream), and returns their inner join in the form of the stream of `optional<pair<T, Y>>`
 ```C++
 template<typename T, typename Y>
 function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
@@ -174,24 +173,24 @@ function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
 				next();  // [7]
 			});
 			seq_a(combined.setter(combined->first));  // [8]
-			seq_b([combined](auto value) mutable { combined->second = move(value); }); // [9]
+			seq_b([combined](auto value) mutable { combined->second = move(value); }); // [9] (the same as [8], but less clear)
 		});
 	});
 	return result;  // [9]
 }
 ```
 Where
-- We create \[1] and return \[9] our data provider.
+- We create \[1] and return \[9] our data provider `slot`.
 - We take and hold our counterpart \[2]
 - We register that we are ready to serve the next request \[3]
-- When the consumer deletes the slot object (we gave it in \[9]), wedetect it in \[4] and delete out context data by not calling and just releasing the `next`. This also deletes `seq_a` and `seq_b`. 
-- On the actual data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, than could be received in any order and possibly asynchronously.
+- When the consumer deletes the slot object (we gave it in \[9]), we detect it in \[4] and delete out context data by not calling and just releasing the `next`. This also deletes `seq_a` and `seq_b`. 
+- On the actual data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously.
 - Then we perform two parallel requests on `seq_a` \[8] and `seq_b` \[9]. Please note, that these two line do exactly the same job. Line \[9] is just an illustration of what `result::setter` does.
 - After two results are done fetching, we notify our consumer by calling `sinc` at \[6]
-- And by calling `next` \[7] we are restarting our zipping loop, which calls sink.await and make us ready to receive a new request.
+- And by calling `next` \[7] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive a new request.
 - Our `loop` will continue working until our consumer deletes our `slot` object and we stop at \[4].
 
-Slot is useful for building the chained data providers and for creating state machines, because `await` in the same `slot` can be called with different lambdas.
+Slots are useful for building the chained data providers and for creating state machines, because `await` in the same `slot` can be called with different lambdas.
 
 ## Structure
 - `include/l_async.h` - single header library itself,
