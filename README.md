@@ -9,19 +9,19 @@ Suppose we need to calc the total size of all files in the given tree of subdire
 ```C++
 template <typename T>
 struct async_stream {
-	virtual ~async_stream() = default;
-	virtual void next(function<void(unique_ptr<T>)> callback) = 0;
+    virtual ~async_stream() = default;
+    virtual void next(function<void(unique_ptr<T>)> callback) = 0;
 };
 
 struct async_file {
-	virtual ~async_file() = default;
-	virtual void get_size(function<void(int)> callback) const = 0;
+    virtual ~async_file() = default;
+    virtual void get_size(function<void(int)> callback) const = 0;
 };
 
 struct async_dir {
-	virtual ~async_dir() = default;
-	virtual unique_ptr<async_stream<async_file>> get_files() const = 0;
-	virtual unique_ptr<async_stream<async_dir>> get_dirs() const = 0;
+    virtual ~async_dir() = default;
+    virtual unique_ptr<async_stream<async_file>> get_files() const = 0;
+    virtual unique_ptr<async_stream<async_dir>> get_dirs() const = 0;
 };
 ```
 
@@ -49,26 +49,26 @@ using l_async::result;
 using l_async::unique;
 
 void calc_tree_size_async(const async_dir& root, result<int> result) {
-	loop dirs([=, stream = unique(root.get_dirs())](auto next) mutable {
-		stream->next([&, next](auto dir) {
-			if (!dir) return;
-			calc_tree_size_async(*dir, result);
-			next();
-		});
-	});
-	loop files([=, stream = unique(root.get_files())](auto next) mutable {
-		stream->next([&, next](auto file) {
-			if (!file) return;
-			file->get_size([=](int size) mutable {
-				*result += size;
-			});
-			next();
-		});
-	});
+    loop dirs([=, stream = unique(root.get_dirs())](auto next) mutable {
+        stream->next([&, next](auto dir) {
+            if (!dir) return;
+            calc_tree_size_async(*dir, result);
+            next();
+        });
+    });
+    loop files([=, stream = unique(root.get_files())](auto next) mutable {
+        stream->next([&, next](auto file) {
+            if (!file) return;
+            file->get_size([=](int size) mutable {
+                *result += size;
+            });
+            next();
+        });
+    });
 }
 
 void calc_tree_size_async(const async_dir& root, function<void(int)> callback) {
-	calc_tree_size_async(root, result<int>(callback));
+    calc_tree_size_async(root, result<int>(callback));
 }
 ```
 
@@ -155,39 +155,39 @@ Async data provider that takes two async data providers that provide streams of 
 ```C++
 template<typename T, typename Y>
 function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
-	function<void(function<void(optional<T>)>)> seq_a,
-	function<void(function<void(optional<T>)>)> seq_b)
+    function<void(function<void(optional<T>)>)> seq_a,
+    function<void(function<void(optional<T>)>)> seq_b)
 {
-	slot<optional<pair<T, Y>>> result;  // [1]
-	loop zipping([
-		seq_a = move(seq_a),
-		seq_b = move(seq_b),
-		sink = result.get_provider()  // [2]
-	](auto next) mutable {
-		sink.await([&, next](bool term) {  // [3]
-			if (term) return;  // [4]
-			l_async::result<pair<optional<int>, optional<int>>> combined([&, next](auto combined) mutable {  // [5]
-				sink(combined.first && combined.second  // [6]
-					? optional(pair{move(*combined.first), move(*combined.second)})
-					: nullopt);
-				next();  // [7]
-			});
-			seq_a(combined.setter(combined->first));  // [8]
-			seq_b([combined](auto value) mutable { combined->second = move(value); }); // [9] (the same as [8], but less clear)
-		});
-	});
-	return result;  // [9]
+    slot<optional<pair<T, Y>>> result;  // [1]
+    loop zipping([
+        seq_a = move(seq_a),
+        seq_b = move(seq_b),
+        sink = result.get_provider()  // [2]
+    ](auto next) mutable {
+        sink.await([&, next](bool term) {  // [3]
+            if (term) return;  // [4]
+            l_async::result<pair<optional<int>, optional<int>>> combined([&, next](auto combined) mutable {  // [5]
+                sink(combined.first && combined.second  // [6]
+                    ? optional(pair{move(*combined.first), move(*combined.second)})
+                    : nullopt);
+                next();  // [7]
+            });
+            seq_a(combined.setter(combined->first));  // [8]
+            seq_b([combined](auto value) mutable { combined->second = move(value); }); // [9] (the same as [8], but less clear)
+        });
+    });
+    return result;  // [9]
 }
 ```
 Where
 - We create \[1] and return \[9] our data provider `slot`.
 - We take and hold our counterpart \[2]
 - We register that we are ready to serve the next request \[3]
-- When the consumer deletes the slot object (we gave it in \[9]), we detect it in \[4] and delete out context data by not calling and just releasing the `next`. This also deletes `seq_a` and `seq_b`. 
-- On the actual data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously.
+- When the consumer deletes our slot object, we detect it in \[4] and delete our context data by not calling and just releasing the `next`. This also deletes `seq_a` and `seq_b`. 
+- On the incoming data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously.
 - Then we perform two parallel requests on `seq_a` \[8] and `seq_b` \[9]. Please note, that these two line do exactly the same job. Line \[9] is just an illustration of what `result::setter` does.
-- After two results are done fetching, we notify our consumer by calling `sinc` at \[6]
-- And by calling `next` \[7] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive a new request.
+- After two results are done fetching, we notify our consumer by calling `sink` at \[6]
+- And by calling `next` \[7] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive another request.
 - Our `loop` will continue working until our consumer deletes our `slot` object and we stop at \[4].
 
 Slots are useful for building the chained data providers and for creating state machines, because `await` in the same `slot` can be called with different lambdas.
