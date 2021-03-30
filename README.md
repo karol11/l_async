@@ -10,7 +10,7 @@ Suppose we need to calc the total size of all files in the given tree of subdire
 template <typename T>
 struct async_stream {
     virtual ~async_stream() = default;
-    virtual void next(function<void(unique_ptr<T>)> callback) = 0;
+    virtual void get_next_item(function<void(unique_ptr<T>)> callback) = 0;
 };
 
 struct async_file {
@@ -31,8 +31,8 @@ All we need to do is traverse the lists of files and directories, acquire file s
 void calc_tree_size_async(const async_dir& root, function<void(int)> callback);
 ```
 
-This API is async, that allows us to speed-up our tasks because our thread doesn't have to wait on `next`/`get size` blocking calls, and even more, it allows us to traverse many subdirectories in parallel, but on the other hand our async code will be very tricky and cumbersome:
-- Our data structures have to preserve `async_stream` instances across asynchronous iterations of `async_stream::next` calls.
+This API is async, that allows us to speed-up our tasks because our thread doesn't have to wait on `get_next_item`/`get size` blocking calls, and even more, it allows us to traverse many subdirectories in parallel, but on the other hand our async code will be very tricky and cumbersome:
+- Our data structures have to preserve `async_stream` instances across asynchronous iterations of `async_stream::get_next_item` calls.
 - We have to support the nested-recursive or parallel-co-existing iteration contexts with data and results.
 - We need to organize some reactive result delivery and callbacks notification mechanisms.
 - `std::unique_ptr`s are not copy-constructible, so `std::function`s, should we elect to use them, can't store these pointers in their capture blocks.
@@ -50,14 +50,14 @@ using l_async::unique;
 
 void calc_tree_size_async(const async_dir& root, result<int> result) {
     loop dirs([=, stream = unique(root.get_dirs())](auto next) mutable {
-        stream->next([&, next](auto dir) {
+        stream->get_next_item([&, next](auto dir) {
             if (!dir) return;
             calc_tree_size_async(*dir, result);
             next();
         });
     });
     loop files([=, stream = unique(root.get_files())](auto next) mutable {
-        stream->next([&, next](auto file) {
+        stream->get_next_item([&, next](auto file) {
             if (!file) return;
             file->get_size([=](int size) mutable {
                 *result += size;
@@ -76,7 +76,7 @@ This solution:
 - has about the same size as in synchronous case,
 - has same structure and same complexity,
 - and even more, it performs scan in parallel,
-- and it is protected against stack overflow in the case the if `async_stream::next` calls its callbacks synchronously.
+- and it is protected against stack overflow in the case the if `async_stream::get_next_item` calls its callbacks synchronously.
 
 Detailed comparison of sync and async code can be found [here](https://github.com/karol11/l_async/blob/main/docs/)
 
@@ -94,7 +94,7 @@ C++ language designers should have supported move-only lambdas capturing move-on
 
 So it is a transparent wrapper for any type. It supports move semantics, disallows assignments and terminates programs on attempts to copy data. It's useful when we need to capture move-only objects (like `std::unique_ptr`) in lambdas.
 
-In the above example it is used to store file and dir streams between get_next iterations.
+In the above example it is used to store file and dir streams between `get_next_item` iterations.
 
 ### `l_async::result<T>`
 
@@ -128,7 +128,7 @@ Our loop body lambda can use its `next` parameter in four ways:
 - Ignore it; this breaks the loop and destroys the context.
 - Or pass it to some function, that expects `std::function<void()>` to be called later; this prolongs lifetime of the context data and allows asynchronous iterations.
 - Or capture it in some callback, that expects data and call later from that callback as shown in the above example, this is also produces asynchronous iterations.
-- Or call it synchronously or pass to a function that will call it synchronously; this also initiates the new iteration but in slightly different manner: it sets a flag, that will make `l_async::loop` to restart the lambda immediately after it returned, performing iteration without stack overflow. BTW, it might be this case in the above example, if `stream->next` will call its callback synchrously.
+- Or call it synchronously or pass to a function that will call it synchronously; this also initiates the new iteration but in slightly different manner: it sets a flag, that will make `l_async::loop` to restart the lambda immediately after it returned, performing iteration without stack overflow. BTW, it might be this case in the above example, if `stream->get_next_item` will call its callback synchrously.
 
 ### `l_async::slot`
 
@@ -140,7 +140,7 @@ The providers are a little bit more trickiy.
 - It never provides data until requested.
 - Each data request can have different callback.
 - In the basic case one request assumes one response.
-- The `async_stream::next` and `async_file::get_size` are the two examples of data providers.
+- The `async_stream::get_next_item` and `async_file::get_size` are the two examples of data providers.
 
 The `l_async::slot` allows to make data providers:
 1. Create instance of `l_async::slot<T>` and give it to consumers. It is a shared_ptr to the real object. It's also a `function<void(function<void(T)> callback)> provider`. It can be called by any consumer.
