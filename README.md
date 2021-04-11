@@ -130,7 +130,7 @@ Our loop body lambda can use its `next` parameter in four ways:
 - Or capture it in some callback, that expects data and call later from that callback as shown in the above example, this is also produces asynchronous iterations.
 - Or call it synchronously or pass to a function that will call it synchronously; this also initiates the new iteration but in slightly different manner: it sets a flag, that will make `l_async::loop` to restart the lambda immediately after it returned, performing iteration without stack overflow. BTW, it might be this case in the above example, if `stream->get_next_item` will call its callback synchrously.
 
-### `l_async::slot`
+### `l_async::slot<T>`
 
 Async data processing often uses the concept of data providers and data consumers.
 Generalized data consumer is a callback that accepts data: `function<void(T)> callback`. With the help of `l_async` it is very easy to write data consumers that request data sequentially (`l_async::loop`), and/or in parallel (`l_async::result`). Consumer can have own callbacks and call another consumers, thus consumers are combinable.
@@ -146,35 +146,35 @@ The `l_async::slot` allows to make data providers:
 1. Create instance of `l_async::slot<T>` and give it to consumers. It is a shared_ptr to the real object. It's also a `function<void(function<void(T)> callback)> provider`. It can be called by any consumer.
 2. Before the instance of `l_async::slot<T>` is given to consumers, you should take and store your own "provider" part of this slot with `auto prov = get_provider()`. It is also a `shared_ptr`.
 3. When you finished your provider initialization and are ready to serve the requests, call `prov.await([]{...});`, this call will store its lambda till the moment, the consumer will either call the slot for data or destroy it.
-  - If it is destroyed, slot simply destoy the passed lambda ending the operation and freeing all resources,
-  - If data is requested, this lambda will be cslled, and you'll need to prepare data sync or async, doesn't matter, and call your `prov()` with your data. Yes it is also a `function(T)`
+   - If it is destroyed, slot simply destoys the passed lambda ending the operation and freeing all resources,
+   - If data is requested, this lambda will be called, and you'll need to prepare data sync or async, doesn't matter, and call your `prov()` with your data. Yes it is also a `function(T)`
 #### Example:
 
-Async data provider that takes two other async data providers that provide streams of `optional<T>` and `optional<Y>` (where `nullopt` signals the end of stream), and returns their inner-join in the form of the stream of `optional<pair<T, Y>>`
+Async data provider that takes two other async data providers that provide streams of `optional<A>` and `optional<B>` (where `nullopt` signals the end of stream), and returns their inner-join in the form of the stream of `optional<pair<A, B>>`
 ```C++
 template<typename T> using listener = std::function<void(optional<T>)>;
 template<typename T> using stream = std::function<listener(T)>;
 
-template<typename T, typename Y>
-stream<pair<T, Y>> inner_join(
-    stream<T> a,
-    stream<Y> a)
+template<typename A, typename B>
+stream<pair<A, B>> inner_join(
+    stream<A> a,
+    stream<B> b)
 {
-    slot<optional<pair<T, Y>>> result;  // [1]
+    slot<optional<pair<A, B>>> result;  // [1]
     loop zipping([
         a = move(a),
-        a = move(a),
+        b = move(b),
         sink = result.get_provider()  // [2]
     ](auto next) mutable {
         sink.await([&, next] {  // [3]
-            l_async::result<pair<optional<T>, optional<Y>>> combined([&, next](auto r) mutable {  // [4]
+            l_async::result<pair<optional<A>, optional<B>>> combined([&, next](auto r) mutable {  // [4]
                 sink(r.first && r.second  // [5]
                     ? optional(pair{move(*r.first), move(*r.second)})
                     : nullopt);
                 next();  // [6]
             });
             a(combined.setter(combined->first));  // [7]
-            b([combined](auto value) mutable { combined->second = move(value); }); // [8] (the same as [7], but less clear)
+            b(combined.setter(combined->second));  // [8]
         });
     });
     return result;  // [9]
@@ -185,7 +185,7 @@ Where
 - We take and hold our counterpart \[2]
 - We register that we are ready to serve the next request \[3] When the consumer deletes our slot object, this lambda will be deleted. This also deletes `seq_a` and `seq_b`. 
 - On the incoming data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously. \[4]
-- Then we perform two parallel requests on `a` \[7] and `b` \[8]. Please note, that these two line do exactly the same job. Line \[8] is just an illustration of what `result::setter` does internally.
+- Then we perform two parallel requests on `a` \[7] and `b` \[8].
 - After two results are done fetching, we notify our consumer by calling `sink` at \[5]
 - And by calling `next` \[6] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive another request.
 - Our `loop` will continue working until our consumer deletes our `slot` object, and this automatically deletes sync lambda \[3], next object and loop variables.
