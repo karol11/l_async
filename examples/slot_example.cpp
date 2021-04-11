@@ -45,8 +45,8 @@ namespace std
 
 namespace
 {
-    // In this example data is organized in (possibly infinite) streams
-    // of items requested by consumer from provider.
+    // In this example data is organized in (possibly infinite) streams of items
+    // requested by consumer from provider.
     //
     // Each stream element is requested in the form of `optional<T>`,
     // where `nullopt` signals the end of stream.
@@ -92,17 +92,17 @@ namespace
 
     // This is an example of a stream, that joins two streams
     // and returns pairs of elements from both:
-    template<typename T, typename Y>
-    stream<pair<T, Y>> inner_join(stream<T> a, stream<Y> b)
+    template<typename A, typename B>
+    stream<pair<A, B>> inner_join(stream<A> a, stream<B> b)
     {
-        slot<optional<pair<T, Y>>> stream;
+        slot<optional<pair<A, B>>> stream;
         loop zipping([
             a = move(a),
             b = move(b),
             sink = stream.get_provider()
         ](auto next) mutable {
             sink.await([&, next] {
-                result<pair<optional<T>, optional<Y>>> expected([&, next](auto r){
+                result<pair<optional<A>, optional<B>>> expected([&, next](auto r){
                     sink(r.first && r.second
                         ? optional(pair{move(*r.first), move(*r.second)})
                         : nullopt);
@@ -116,9 +116,9 @@ namespace
     }
 
     // Makes an infinite sequence of `nullopt`s
-    // Streams can be infinite
+    // So, streams can be infinite
     template<typename T>
-    function<void()> end_of_stream(T sink) {
+    function<void()> nullopt_stream(T sink) {
         return [=] {
             loop infinite([=](auto next) {
                 sink.await([&, next] {
@@ -153,7 +153,7 @@ namespace
 
     stream<int> tree_stream(node& root) {
         slot<optional<int>> result;
-        root.scan(result.get_provider(), end_of_stream(result.get_provider()));
+        root.scan(result.get_provider(), nullopt_stream(result.get_provider()));
         return result;
     }
 
