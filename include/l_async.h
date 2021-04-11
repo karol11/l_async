@@ -120,16 +120,8 @@ namespace l_async
     {
         struct data
         {
-            std::function<void(bool)> who_awaits_request;
+            std::function<void()> who_awaits_request;
             std::function<void(T)> who_awaits_data;
-
-        public:
-            ~data()
-            {
-                if (who_awaits_request) {
-                    who_awaits_request(/*terminate=*/true);
-                }
-            }
         };
         std::shared_ptr<data> ptr;
 
@@ -143,21 +135,19 @@ namespace l_async
                 : ptr(std::move(ptr))
             {}
 
-            void await(std::function<void(bool)> request_listener)
+            void await(std::function<void()> request_listener) const
             {
                 if (auto p = ptr.lock()) {
                     assert(!p->who_awaits_request);
                     if (p->who_awaits_data) {
-                        request_listener(/*terminate=*/false);
+                        request_listener();
                     } else {
                         p->who_awaits_request = move(request_listener);
                     }
-                } else {
-                    request_listener(/*terminate=*/true);
                 }
             }
 
-            void operator() (T value)
+            void operator() (T value) const
             {
                 if (auto p = ptr.lock()) {
                     assert(p->who_awaits_data);
@@ -177,9 +167,9 @@ namespace l_async
             assert(!ptr->who_awaits_data);
             ptr->who_awaits_data = std::move(data_listener);
             if (ptr->who_awaits_request) {
-                std::function<void(bool)> temp;
+                std::function<void()> temp;
                 std::swap(temp, ptr->who_awaits_request);
-                temp(/*terminate=*/false);
+                temp();
             }
         }
 

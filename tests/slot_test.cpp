@@ -79,8 +79,7 @@ namespace
             if (++i >= current.subnodes.size()) {
                 cont();
             } else {
-                sink.await([&, next](bool term) {
-                    if (term) return;
+                sink.await([&, next] {
                     sink(current.subnodes[i].payload);
                     node_iterator(current.subnodes[i], sink, next);
                 });
@@ -91,13 +90,11 @@ namespace
     function<void(function<void(optional<int>)>)> tree_iterator(node& root)
     {
         slot<optional<int>> result;
-        result.get_provider().await([&root, r = result.get_provider()](bool term) mutable {
-            if (term) return;
+        result.get_provider().await([&root, r = result.get_provider()] {
             r(root.payload);
             node_iterator(root, r, [r]() mutable {
                 loop after_end([r](auto next) mutable {
-                    r.await([&, next](bool t) mutable {
-                        if (t) return;
+                    r.await([&, next]() mutable {
                         r(nullopt);
                         next();
                     });
@@ -113,8 +110,7 @@ namespace
     {
         slot<optional<pair<optional<int>, optional<int>>>> result;
         loop zipping([list_a = move(list_a), list_b = move(list_b), sink = result.get_provider()](auto next) mutable {
-            sink.await([&, next](bool term) {
-                if (term) return;
+            sink.await([&, next] {
                 l_async::result<pair<optional<int>, optional<int>>> combined([&, next](auto combined) mutable {
                     sink(combined.first || combined.second ? optional(move(combined)) : nullopt);
                     next();

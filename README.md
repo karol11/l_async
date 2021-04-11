@@ -25,7 +25,7 @@ struct async_dir {
 };
 ```
 
-All we need to do is traverse the lists of files and directories, acquire file sizes and calculate the total size:
+Our goal is to traverse the lists of files and directories, acquire file sizes and calculate the total size:
 
 ```C++
 void calc_tree_size_async(const async_dir& root, function<void(int)> callback);
@@ -145,35 +145,36 @@ The providers are a little bit more trickiy.
 The `l_async::slot` allows to make data providers:
 1. Create instance of `l_async::slot<T>` and give it to consumers. It is a shared_ptr to the real object. It's also a `function<void(function<void(T)> callback)> provider`. It can be called by any consumer.
 2. Before the instance of `l_async::slot<T>` is given to consumers, you should take and store your own "provider" part of this slot with `auto prov = get_provider()`. It is also a `shared_ptr`.
-3. When you finished your provider initialization and are ready to serve the requests, call `prov.await([](bool term) {...});`, this call will store its lambda till the moment, the consumer will either call the slot for data or destroy it. If either of this event happened, this lambda will be awoken with a bool parameter:
-  - `term=true` - if it is destroyed. In this case you need to destroy your `prov` object and return,
-  - `term=false` - if data is requested. In this case you need to prepare data sync or async, doesn't matter, and call you'r `prov()` with your data. Yes it is also a `function(T)`
-
+3. When you finished your provider initialization and are ready to serve the requests, call `prov.await([]{...});`, this call will store its lambda till the moment, the consumer will either call the slot for data or destroy it.
+  - If it is destroyed, slot simply destoy the passed lambda ending the operation and freeing all resources,
+  - If data is requested, this lambda will be cslled, and you'll need to prepare data sync or async, doesn't matter, and call your `prov()` with your data. Yes it is also a `function(T)`
 #### Example:
 
 Async data provider that takes two other async data providers that provide streams of `optional<T>` and `optional<Y>` (where `nullopt` signals the end of stream), and returns their inner-join in the form of the stream of `optional<pair<T, Y>>`
 ```C++
+template<typename T> using listener = std::function<void(optional<T>)>;
+template<typename T> using stream = std::function<listener(T)>;
+
 template<typename T, typename Y>
-function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
-    function<void(function<void(optional<T>)>)> seq_a,
-    function<void(function<void(optional<Y>)>)> seq_b)
+stream<pair<T, Y>> inner_join(
+    stream<T> a,
+    stream<Y> a)
 {
     slot<optional<pair<T, Y>>> result;  // [1]
     loop zipping([
-        seq_a = move(seq_a),
-        seq_b = move(seq_b),
+        a = move(a),
+        a = move(a),
         sink = result.get_provider()  // [2]
     ](auto next) mutable {
-        sink.await([&, next](bool term) {  // [3]
-            if (term) return;  // [4]
-            l_async::result<pair<optional<T>, optional<Y>>> combined([&, next](auto combined) mutable {  // [5]
-                sink(combined.first && combined.second  // [6]
-                    ? optional(pair{move(*combined.first), move(*combined.second)})
+        sink.await([&, next] {  // [3]
+            l_async::result<pair<optional<T>, optional<Y>>> combined([&, next](auto r) mutable {  // [4]
+                sink(r.first && r.second  // [5]
+                    ? optional(pair{move(*r.first), move(*r.second)})
                     : nullopt);
-                next();  // [7]
+                next();  // [6]
             });
-            seq_b([combined](auto value) mutable { combined->second = move(value); }); // [8] (the same as [9], but less clear)
-            seq_a(combined.setter(combined->first));  // [9]
+            a(combined.setter(combined->first));  // [7]
+            b([combined](auto value) mutable { combined->second = move(value); }); // [8] (the same as [7], but less clear)
         });
     });
     return result;  // [9]
@@ -182,15 +183,14 @@ function<void(function<void(optional<pair<T, Y>>)>)> inner_join(
 Where
 - We create \[1] and return \[9] our data provider `slot`.
 - We take and hold our counterpart \[2]
-- We register that we are ready to serve the next request \[3]
-- When the consumer deletes our slot object, we detect it in \[4] and delete our context data by not calling and just releasing the `next`. This also deletes `seq_a` and `seq_b`. 
-- On the incoming data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously.
-- Then we perform two parallel requests on `seq_a` \[9] and `seq_b` \[8]. Please note, that these two line do exactly the same job. Line \[8] is just an illustration of what `result::setter` does internally.
-- After two results are done fetching, we notify our consumer by calling `sink` at \[6]
-- And by calling `next` \[7] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive another request.
-- Our `loop` will continue working until our consumer deletes our `slot` object and we stop at \[4].
+- We register that we are ready to serve the next request \[3] When the consumer deletes our slot object, this lambda will be deleted. This also deletes `seq_a` and `seq_b`. 
+- On the incoming data request from consumer we create the `combined` `result` to accumulate the results of two parallel outgoing requests, that could be received in any order and possibly asynchronously. \[4]
+- Then we perform two parallel requests on `a` \[7] and `b` \[8]. Please note, that these two line do exactly the same job. Line \[8] is just an illustration of what `result::setter` does internally.
+- After two results are done fetching, we notify our consumer by calling `sink` at \[5]
+- And by calling `next` \[6] we restart our `zipping` loop, which calls the `sink.await` and make us ready to receive another request.
+- Our `loop` will continue working until our consumer deletes our `slot` object, and this automatically deletes sync lambda \[3], next object and loop variables.
 
-Slots are useful for building the chained data providers and for creating state machines, because `await` in the same `slot` can be called with different lambdas.
+Slots are useful for building the chained data providers and for creating state machines, because `await` in the same `slot` can be called with different lambdas (see `slot_example.cpp`.
 
 ## Structure
 - `include/l_async.h` - single header library itself,

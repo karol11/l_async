@@ -31,4 +31,5 @@ add_executable (l_async
 
     "examples/loop_example.cpp"
     "examples/result_example.cpp"
+    "examples/slot_example.cpp"
 )
